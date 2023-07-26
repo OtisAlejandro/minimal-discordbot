@@ -75,5 +75,3 @@
    bot.run(bot.token)
    ```
    This part of the code loads any cogs (extensions) in the `cogs` directory and runs the bot. The `load_cogs` function tries to load each cog and logs any errors that occur.
-
-Overall, your code is well-structured and makes good use of the discord.py library. However, there are always ways to improve. For example, you could use the `commands` extension in discord.py to handle commands more easily, or you could use a database to store channel memories instead of a `defaultdict`. If you have any specific questions or areas you want to improve, feel free to ask!
