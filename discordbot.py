@@ -191,22 +191,26 @@ async def on_message(message):
     if message.channel.id not in bot.channels:
         return
 
+    # Check if the message starts with a dot (.) or a forward slash (/)
+    if message.content.startswith(".") or message.content.startswith("/"):
+        return
+
     try:
         async with message.channel.typing():
             if is_mentioned(bot, message):
                 # if the message doesn't have an image attachment
                 if not await has_image_attachment(message):
                     response = await generate_response(
-                        bot.name, message.channel.id, message.clean_content
+                        message.author.display_name, message.channel.id, message.clean_content
                     )
                 # if the message has an image attachment
                 # then send it to the imagecaption cog
                 else:
-                    image_response = await bot.get_cog("ImageCaption").on_message(
+                    image_response = await bot.get_cog("image_caption").image_comment(
                         message, message.clean_content
                     )
                     response = await generate_response(
-                        bot.name, message.channel.id, image_response
+                        message.author.display_name, message.channel.id, image_response
                     )
                 await message.channel.send(response)
     except Exception as e:
