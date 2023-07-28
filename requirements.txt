@@ -1,3 +1,7 @@
 discord.py
 langchain
 transformers
+torch
+transformers
+Pillow
+openai

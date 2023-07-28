@@ -4,9 +4,11 @@ from langchain.prompts.prompt import PromptTemplate
 from langchain.chains import ConversationChain
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain.llms import KoboldApiLLM, TextGen
+from langchain.llms import OpenAI
 import json
 import os
 import asyncio
+import re
 
 # Add this at the top of your script
 from collections import defaultdict
@@ -31,9 +33,10 @@ bot.prompt = config["required"]["PROMPT"].replace("{{char}}", bot.name)
 # Extras
 if config["extras"]["MENTION"].lower() == "t":
     bot.mention = True
-bot.stop_sequences = defaultdict(lambda: config["extras"]["STOP_SEQUENCES"].split(","))
+bot.stop_sequences = defaultdict(
+    lambda: config["extras"]["STOP_SEQUENCES"].split(","))
 
-# Initialize the langchain components
+# Main prompt
 TEMPLATE = f"""### Instruction:
 {bot.prompt.replace('{{char}}', bot.name)}
 {{history}}
@@ -41,9 +44,11 @@ TEMPLATE = f"""### Instruction:
 ### Response:
 {bot.name}:"""
 
-PROMPT = PromptTemplate(input_variables=["history", "input"], template=TEMPLATE)
+PROMPT = PromptTemplate(
+    input_variables=["history", "input"], template=TEMPLATE)
 
 
+# add llm = OpenAI(openai_api_key=endpoint, api_base='https://api.pawan.krd/v1')
 async def endpoint_test(endpoint):
     try:
         llm = KoboldApiLLM(endpoint=endpoint)
@@ -51,12 +56,20 @@ async def endpoint_test(endpoint):
         return llm
     except:
         print("Kobold API failed, trying TextGen")
-        try:
-            llm = TextGen(model_url=endpoint)
-            llm("Question: What is the sum of 2 and 2?\nAnswer:")
-            return llm
-        except:
-            pass
+    try:
+        llm = TextGen(model_url=endpoint)
+        llm("Question: What is the sum of 2 and 2?\nAnswer:")
+        return llm
+    except:
+        print("TextGen failed, trying OpenAI")
+    try:
+        llm = OpenAI(openai_api_key=endpoint,
+                     api_base="https://api.pawan.krd/v1")
+        llm("Question: What is the sum of 2 and 2?\nAnswer:")
+        return llm
+    except:
+        print("OpenAI failed. giving up")
+        exit(1)
 
 
 async def get_memory_for_channel(channel_id):
@@ -139,6 +152,28 @@ async def on_ready():
     )
 
 
+async def has_image_attachment(message):
+    url_pattern = re.compile(
+        r"http[s]?://[^\s/$.?#].[^\s]*\.(jpg|jpeg|png|gif)", re.IGNORECASE
+    )
+    tenor_pattern = re.compile(r"https://tenor.com/view/[\w-]+")
+    for attachment in message.attachments:
+        if attachment.filename.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
+            return True
+        # Check if the message content contains a URL that ends with an image ext
+    if url_pattern.search(message.content):
+        return True
+    # Check if the message content contains a Tenor GIF URL
+    elif tenor_pattern.search(message.content):
+        return True
+    else:
+        return False
+
+
+async def is_mentioned(bot, message):
+    return bot.mention and bot.name.lower() in message.clean_content.lower()
+
+
 @bot.event
 async def on_message(message):
     # Don't process messages sent by the bot
@@ -149,12 +184,26 @@ async def on_message(message):
     if message.channel.id not in bot.channels:
         return
 
-    async with message.channel.typing():
-        if bot.mention and bot.name.lower() in message.clean_content.lower():
-            response = await generate_response(
-                bot.name, message.channel.id, message.clean_content
-            )
-            await message.channel.send(response)
+    try:
+        async with message.channel.typing():
+            if is_mentioned(bot, message):
+                # if the message doesn't have an image attachment
+                if not await has_image_attachment(message):
+                    response = await generate_response(
+                        bot.name, message.channel.id, message.clean_content
+                    )
+                # if the message has an image attachment
+                # then send it to the imagecaption cog
+                else:
+                    image_response = await bot.get_cog("ImageCaption").on_message(
+                        message, message.clean_content
+                    )
+                    response = await generate_response(
+                        bot.name, message.channel.id, image_response
+                    )
+                await message.channel.send(response)
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 
 async def load_cogs() -> None:
