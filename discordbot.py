@@ -5,6 +5,7 @@ from langchain.chains import ConversationChain
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain.llms import KoboldApiLLM, TextGen
 from langchain.llms import OpenAI
+from llmstudio import LMStudio
 import json
 import os
 import asyncio
@@ -64,11 +65,17 @@ async def endpoint_test(endpoint):
         print("TextGen failed, trying OpenAI")
     try:
         llm = OpenAI(openai_api_key=endpoint,
-                     api_base="https://api.pawan.krd/v1")
+                     openai_api_base="https://api.pawan.krd/v1")
         llm("Question: What is the sum of 2 and 2?\nAnswer:")
         return llm
     except:
-        print("OpenAI failed. giving up")
+        print("OpenAI failed. Trying LLMStudio")
+    try:
+        llm = LMStudio(endpoint="http://localhost:1234")
+        llm("Question: What is the sum of 2 and 2?\nAnswer:")
+        return llm
+    except:
+        print("LLMStudio failed. Please check your endpoint.")
         exit(1)
 
 
