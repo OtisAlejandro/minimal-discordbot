@@ -28,6 +28,7 @@ bot.endpoint = config["required"]["ENDPOINT"]
 bot.channels = [int(x) for x in config["required"]["CHANNELS"].split(",")]
 bot.name = config["required"]["NAME"]
 bot.prompt = config["required"]["PROMPT"].replace("{{char}}", bot.name)
+bot.mention = config["extras"]["MENTION"].lower()
 bot.histories = {}  # Initialize the history dictionary
 bot.channel_stop_sequences = {}
 
@@ -243,7 +244,7 @@ async def on_message(message):
                     )
                 # if the message has an image attachment
                 else:
-                    image_response = await bot.get_cog("ImageCaption").on_message(
+                    image_response = await bot.get_cog("image_caption").image_comment(
                         message, message.clean_content
                     )
                     await add_history(
