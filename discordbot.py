@@ -2,20 +2,18 @@ import discord
 from discord.ext.commands import Bot
 from langchain.prompts.prompt import PromptTemplate
 from langchain.chains import ConversationChain
-from langchain.memory import ConversationSummaryBufferMemory
+from langchain.memory import ConversationTokenBufferMemory
 from langchain.llms import KoboldApiLLM, TextGen
 from langchain.llms import OpenAI
-from llmstudio import LMStudio
+from helpers.llmstudio import LMStudio
+from helpers.custom_memory import CustomBufferWindowMemory
 import json
 import os
 import asyncio
 import re
-
 # Add this at the top of your script
-from collections import defaultdict
+CHAT_HISTORY_LINE_LIMIT = 20
 
-# Initialize a dictionary for channel memories
-channel_memories = defaultdict(ConversationSummaryBufferMemory)
 
 # Initialize bot
 intents = discord.Intents.all()
@@ -30,18 +28,24 @@ bot.endpoint = config["required"]["ENDPOINT"]
 bot.channels = [int(x) for x in config["required"]["CHANNELS"].split(",")]
 bot.name = config["required"]["NAME"]
 bot.prompt = config["required"]["PROMPT"].replace("{{char}}", bot.name)
+bot.histories = {}  # Initialize the history dictionary
+bot.channel_stop_sequences = {}
 
 # Extras
 if config["extras"]["MENTION"].lower() == "t":
     bot.mention = True
-bot.stop_sequences = defaultdict(
-    lambda: config["extras"]["STOP_SEQUENCES"].split(","))
+bot.stop_sequences = config["extras"]["STOP_SEQUENCES"].split(",")
 
 # Main prompt
-TEMPLATE = f"""### Instruction:
+TEMPLATE = f"""
+
 {bot.prompt.replace('{{char}}', bot.name)}
+
+<START OF CONVERSATION>
 {{history}}
+### Instruction:
 {{input}}
+
 ### Response:
 {bot.name}:"""
 
@@ -80,43 +84,80 @@ async def endpoint_test(endpoint):
 
 
 async def get_memory_for_channel(channel_id):
-    # If the memory for this channel doesn't exist, create it
-    if channel_id not in channel_memories:
-        channel_memories[channel_id] = ConversationSummaryBufferMemory(
-            llm=bot.llm, max_token_limit=10
+    """Get the memory for the channel with the given ID. If no memory exists yet, create one."""
+    channel_id = str(channel_id)
+    if channel_id not in bot.histories:
+        # Create a new memory for the channel
+
+        bot.histories[channel_id] = CustomBufferWindowMemory(
+            k=CHAT_HISTORY_LINE_LIMIT, ai_prefix=bot.name
         )
-    return channel_memories[channel_id]
+        # Get the last 5 messages from the channel in a list
+        # messages = await get_messages_by_channel(channel_id)
+        # # Exclude the last message using slicing
+        # messages_to_add = messages[-2::-1]
+        # messages_to_add_minus_one = messages_to_add[:-1]
+        # # Add the messages to the memory
+        # for message in messages_to_add_minus_one:
+
+        #     name = message[0]
+        #     channel_ids = str(message[1])
+        #     message = message[2]
+        #     print(f"{name}: {message}")
+        #     await add_history(name, channel_ids, message)
+
+    # bot.memory = bot.histories[channel_id]
+    return bot.histories[channel_id]
 
 
-async def generate_response(name, channel_id, message_content):
+async def generate_response(name, channel_id, message_content) -> None:
+    name = name
     memory = await get_memory_for_channel(str(channel_id))
     stop_sequence = await get_stop_sequence_for_channel(channel_id, name)
+    print(f"stop sequence: {stop_sequence}")
     formatted_message = f"{name}: {message_content}"
+    MAIN_TEMPLATE = TEMPLATE
+    PROMPT = PromptTemplate(
+        input_variables=["history", "input"],
+        template=MAIN_TEMPLATE
+    )
+
+    # Create a conversation chain using the channel-specific memory
     conversation = ConversationChain(
         prompt=PROMPT,
         llm=bot.llm,
         verbose=True,
         memory=memory,
     )
-
     input_dict = {"input": formatted_message, "stop": stop_sequence}
-    response = conversation(input_dict)
+    response_text = conversation(input_dict)
+    response = response_text["response"]
 
-    return response["response"]
+    return response
 
 
-async def add_history(name, channel_id, message_content):
+async def add_history(name, channel_id, message_content) -> None:
+    # get the memory for the channel
     memory = await get_memory_for_channel(str(channel_id))
+
     formatted_message = f"{name}: {message_content}"
+
+    # add the message to the memory
+    print(f"adding message to memory: {formatted_message}")
     memory.add_input_only(formatted_message)
     return None
 
 
 async def get_stop_sequence_for_channel(channel_id, name):
     name_token = f"\n{name}:"
-    if name_token not in bot.stop_sequences[channel_id]:
-        bot.stop_sequences[channel_id].append(name_token)
-    return bot.stop_sequences[channel_id]
+    if channel_id not in bot.channel_stop_sequences:
+        # Assign an empty list or a list with default stop sequences
+        bot.channel_stop_sequences[channel_id] = []
+
+    if name_token not in bot.channel_stop_sequences[channel_id]:
+        bot.channel_stop_sequences[channel_id].append(name_token)
+
+    return bot.channel_stop_sequences[channel_id]
 
 
 async def get_messages_by_channel(channel_id):
@@ -148,15 +189,6 @@ async def get_messages_by_channel(channel_id):
 async def on_ready():
     print(f"We have logged in as {bot.user}")
     bot.llm = await endpoint_test(bot.endpoint)
-
-    # Initialize memory and conversation chain after bot.llm is set
-    memory = ConversationSummaryBufferMemory(llm=bot.llm, max_token_limit=800)
-    bot.conversation = ConversationChain(
-        prompt=PROMPT,
-        llm=bot.llm,
-        verbose=True,
-        memory=memory,
-    )
 
 
 async def has_image_attachment(message):
@@ -191,24 +223,38 @@ async def on_message(message):
     if message.channel.id not in bot.channels:
         return
 
+    print(f"Checking message: {message.clean_content}")  # debug print
+    # debug print
+    print(f"Is bot mentioned: {await is_mentioned(bot, message)}")
+    # debug print
+    print(
+        f"Bot name: {bot.name.lower()}, Message content: {message.clean_content.lower()}")
+
     try:
-        async with message.channel.typing():
-            if is_mentioned(bot, message):
+        if await is_mentioned(bot, message):
+            async with message.channel.typing():
                 # if the message doesn't have an image attachment
                 if not await has_image_attachment(message):
                     response = await generate_response(
                         message.author.display_name, message.channel.id, message.clean_content
                     )
                 # if the message has an image attachment
-                # then send it to the imagecaption cog
                 else:
                     image_response = await bot.get_cog("ImageCaption").on_message(
                         message, message.clean_content
+                    )
+                    await add_history(
+                        message.author.display_name, message.channel.id, image_response
                     )
                     response = await generate_response(
                         message.author.display_name, message.channel.id, image_response
                     )
                 await message.channel.send(response)
+        else:
+            await add_history(
+                message.author.display_name, message.channel.id, message.clean_content
+            )
+            
     except Exception as e:
         print(f"An error occurred: {e}")
 
