@@ -22,10 +22,6 @@ class LMStudio(LLM):
 
         if stop is not None:
             data["stop"] = stop
-<<<<<<< HEAD:llmstudio.py
-            
-=======
->>>>>>> 7a4ae9efff8d2f498f6a1a3044a9f94257940566:helpers/llmstudio.py
 
         response = requests.post(f'{self.endpoint}/v1/chat/completions', json=data)
         response.raise_for_status()
