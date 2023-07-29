@@ -197,7 +197,7 @@ async def on_message(message):
                 # if the message doesn't have an image attachment
                 if not await has_image_attachment(message):
                     response = await generate_response(
-                        bot.name, message.channel.id, message.clean_content
+                        message.author.display_name, message.channel.id, message.clean_content
                     )
                 # if the message has an image attachment
                 # then send it to the imagecaption cog
@@ -206,7 +206,7 @@ async def on_message(message):
                         message, message.clean_content
                     )
                     response = await generate_response(
-                        bot.name, message.channel.id, image_response
+                        message.author.display_name, message.channel.id, image_response
                     )
                 await message.channel.send(response)
     except Exception as e:
