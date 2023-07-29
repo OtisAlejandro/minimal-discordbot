@@ -21,7 +21,7 @@ class LMStudio(LLM):
         }
 
         if stop is not None:
-            data["stop_sequence"] = stop
+            data["stop"] = stop
 
         response = requests.post(f'{self.endpoint}/v1/chat/completions', json=data)
         response.raise_for_status()

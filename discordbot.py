@@ -216,6 +216,9 @@ async def is_mentioned(bot, message):
 @bot.event
 async def on_message(message):
     # Don't process messages sent by the bot
+    if message.content.startswith(".") or message.content.startswith("/"):
+        return
+    
     if message.author == bot.user:
         return
 
