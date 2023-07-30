@@ -94,18 +94,19 @@ async def get_memory_for_channel(channel_id):
             k=CHAT_HISTORY_LINE_LIMIT, ai_prefix=bot.name
         )
         # Get the last 5 messages from the channel in a list
-        # messages = await get_messages_by_channel(channel_id)
+        messages = await get_messages_by_channel(channel_id)
         # # Exclude the last message using slicing
-        # messages_to_add = messages[-2::-1]
-        # messages_to_add_minus_one = messages_to_add[:-1]
-        # # Add the messages to the memory
-        # for message in messages_to_add_minus_one:
+        messages_to_add = messages[-2::-1]
+        messages_to_add_minus_one = messages_to_add[:-1]
+        # Add the messages to the memory
+        for message in messages_to_add_minus_one:
+            # If the message has an attachment
 
-        #     name = message[0]
-        #     channel_ids = str(message[1])
-        #     message = message[2]
-        #     print(f"{name}: {message}")
-        #     await add_history(name, channel_ids, message)
+            name = message[0]
+            channel_ids = str(message[1])
+            message = message[2]
+            print(f"{name}: {message}")
+            await add_history(name, channel_ids, message)
 
     # bot.memory = bot.histories[channel_id]
     return bot.histories[channel_id]
@@ -170,13 +171,28 @@ async def get_messages_by_channel(channel_id):
         if message.content.startswith(".") or message.content.startswith("/"):
             continue
 
-        messages.append(
-            (
-                message.author.display_name,
-                message.channel.id,
-                message.clean_content.replace("\n", " "),
+        # If message has an attachment, caption the attachment and make the result the message content. If not, append the messages directly teehee
+        if message.attachments:
+            attachment = message.attachments[0]
+            if attachment.filename.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
+                image_response = await bot.get_cog("image_caption").image_comment(
+                    message, message.clean_content
+                )
+                messages.append(
+                    (
+                        message.author.display_name,
+                        message.channel.id,
+                        image_response.replace("\n", " "),
+                    )
+                )
+        else:
+            messages.append(
+                (
+                    message.author.display_name,
+                    message.channel.id,
+                    message.clean_content.replace("\n", " "),
+                )
             )
-        )
 
         # Break the loop once we have at least 5 non-skipped messages
         if len(messages) >= 10:
